@@ -144,6 +144,36 @@ include it in the diagnostic ramdisk and call it from `/linuxrc` after
 mounting proc, sysfs, tmpfs, and devtmpfs. The script only reads system state;
 the SD/FIT boot mechanism that launches it is separate.
 
+#### Rebuilding the read-only SD diagnostic
+
+The bootable diagnostic ramdisk was made from the separate
+[`wyze-campan4-sd-install`](https://github.com/gtxaspec/wyze-campan4-sd-install)
+project. To reproduce the read-only diagnostic payload:
+
+1. Clone that project and copy
+   `scripts/wyze-panv4-diagnostics.sh` from this repo into its `rootfs/`.
+2. Edit the installer's `rootfs/linuxrc`: after mounting proc, sysfs, tmpfs,
+   devtmpfs, and `/tmp/sd`, run `/wyze-panv4-diagnostics.sh`. For a diagnostic
+   image, stop after printing the report; do not execute any erase or write
+   commands. Add a short delay before rebooting if you need time to capture
+   the output.
+3. Build the ramdisk FIT using the stock full flash dump and the U-Boot and
+   environment files produced by the Pan v4 firmware build:
+
+   ```sh
+   STOCK_DUMP=/path/to/stock-full-dump.bin
+   UBOOT_IMAGE=/path/to/output/images/u-boot-with-spl-lzma.bin
+   UBOOT_ENV=/path/to/output/images/u-boot-env.bin
+   ./build.sh "$STOCK_DUMP" "$UBOOT_IMAGE" "$UBOOT_ENV"
+   ```
+
+   The builder creates `factory_wcpanv4_uvc`. Copy it to the root of the
+   FAT32 card, insert it, and power on the camera. Stock U-Boot loads that FIT
+   and the stock kernel starts the ramdisk; the diagnostic `linuxrc` prints
+   the report without touching SPI flash. The U-Boot image filename varies by
+   build, so replace the example paths with the stock dump and actual files
+   under `output/images/`.
+
 The tested SD card was 64 GB, FAT32, with one partition (`FAT32 XINT13`). Copy
 the built image to its root as exactly `autoupdate-full.bin`; the installer
 stopped with `ERROR: missing autoupdate-full.bin` when it could not find that
@@ -172,13 +202,28 @@ installation as complete.
 The adapted installer used for this bring-up was built outside this checkout
 from `gtxaspec/wyze-campan4-sd-install` and is not included here. The repo's
 full image and the installer are separate pieces; you need that adapted
-installer to reproduce the stock-to-Thingino card flow. It needed to
-create its mount-point directories, use the live Pan v4 partition layout
-rather than assume `mtd0` was the whole flash, back up and verify each MTD
-partition before writing, and handle devtmpfs already being mounted. It wrote
-the bootloader across the stock `uboot` and `boot` area and placed the
-environment at offset `0x50000`. Keep the verified stock backups from the
-card for recovery.
+installer to reproduce the stock-to-Thingino card flow. To adapt the upstream
+`rootfs/linuxrc` for installation:
+
+1. Create mount points before mounting. If devtmpfs is already mounted at
+   `/dev`, keep using it instead of trying to mount it again or replacing its
+   device nodes.
+2. Use the observed MTD map above. Do not treat `/dev/mtd0` as a 16 MiB NOR
+   device: it is only 192 KiB. Back up each MTD partition separately, verify
+   each backup against a second read, and do not proceed to writes unless all
+   partitions verify.
+3. Write the 320 KiB Thingino U-Boot across the stock `uboot` and `boot`
+   partitions. The environment starts at absolute flash offset `0x50000`,
+   which is `0x20000` into `mtd1`. Erase only the required aligned flash area
+   and verify U-Boot and environment by reading them back.
+4. Keep the full Thingino image at the SD root as `autoupdate-full.bin` for
+   the subsequent firmware update. The tested installer rebooted after
+   verifying the bootloader; after that reboot the camera started Thingino.
+
+The successful installer printed `umount: can't unmount /tmp/sd: Device or
+resource busy` after verification because a log file was still open on the
+card. The camera nevertheless rebooted successfully without the SD card. Keep
+the verified stock backups from the card for recovery.
 
 ## First boot notes
 

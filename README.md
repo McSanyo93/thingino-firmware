@@ -27,6 +27,48 @@ backed up and verified the stock flash, then installed the Thingino
 bootloader. **The adapted SD installer is not included in this repo**, so the
 firmware image alone is not sufficient to reproduce installation over stock.
 
+### Adapt the stock SD installer
+
+The diagnostic boot and installer were made from
+[`gtxaspec/wyze-campan4-sd-install`](https://github.com/gtxaspec/wyze-campan4-sd-install).
+Clone that project separately, copy this repo's read-only diagnostic script
+into its `rootfs/`, and call it from `rootfs/linuxrc` after the pseudo-filesystems
+and SD card are mounted. For a diagnostic-only image, call the script and
+pause before any install logic:
+
+```sh
+/wyze-panv4-diagnostics.sh
+sleep 30
+reboot -f
+```
+
+The temporary boot uses the stock U-Boot FIT signature bypass implemented by
+that external builder. To build the diagnostic FIT with the stock full dump
+and the U-Boot plus environment files from the Thingino build:
+
+```sh
+git clone https://github.com/gtxaspec/wyze-campan4-sd-install.git
+cd wyze-campan4-sd-install
+cp /path/to/thingino-firmware/scripts/wyze-panv4-diagnostics.sh rootfs/
+STOCK_DUMP=/path/to/stock-full-dump.bin
+UBOOT_IMAGE=/path/to/output/images/u-boot-with-spl-lzma.bin
+UBOOT_ENV=/path/to/output/images/u-boot-env.bin
+./build.sh "$STOCK_DUMP" "$UBOOT_IMAGE" "$UBOOT_ENV"
+```
+
+Replace the example paths with the stock dump and image paths from your build;
+the U-Boot image filename can vary by configuration.
+
+That creates `factory_wcpanv4_uvc`, which boots the temporary ramdisk. For an
+installer, replace the diagnostic-only `linuxrc` with a partition-aware
+installer: create mount points first, tolerate devtmpfs already mounted, back
+up and verify every MTD partition before writing, and target the 192 KiB
+`mtd0` plus the first 128 KiB of `mtd1` for the 320 KiB U-Boot image. The
+environment is at flash offset `0x50000` (offset `0x20000` within `mtd1`).
+Never treat `/dev/mtd0` as a raw 16 MiB flash device. The exact partition map,
+diagnostic steps, and observed installer behavior are in
+[`docs/cameras/wyze-cam-pan-v4.md`](docs/cameras/wyze-cam-pan-v4.md).
+
 The camera's read-only startup diagnostics are documented in
 [`docs/cameras/wyze-cam-pan-v4.md`](docs/cameras/wyze-cam-pan-v4.md). The
 script [`scripts/wyze-panv4-diagnostics.sh`](scripts/wyze-panv4-diagnostics.sh)
