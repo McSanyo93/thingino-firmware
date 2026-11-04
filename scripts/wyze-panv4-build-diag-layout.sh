@@ -76,8 +76,10 @@ sleep 30
 reboot -f
 LINUXRC
 chmod 0755 "$INSTALLER_DIR/rootfs/linuxrc"
+cp "$INSTALLER_DIR/rootfs/uboot.bin" "$WORK_DIR/uboot.bin"
+cp "$INSTALLER_DIR/rootfs/uboot-env.bin" "$WORK_DIR/uboot-env.bin"
 
-if ! (cd "$INSTALLER_DIR" && ./build.sh "$STOCK_ROM") >"$OUTPUT_DIR/build.log" 2>&1; then
+if ! (cd "$INSTALLER_DIR" && ./build.sh "$STOCK_ROM" "$WORK_DIR/uboot.bin" "$WORK_DIR/uboot-env.bin") >"$OUTPUT_DIR/build.log" 2>&1; then
 	tail -n 80 "$OUTPUT_DIR/build.log" >&2
 	exit 1
 fi
