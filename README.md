@@ -8,11 +8,17 @@ Ingenic T32NQ, SC835HAI sensor, and ATBM6162S Wi-Fi. The profile and the
 stock-to-Thingino bring-up were tested on one camera. Hardware revisions and
 stock firmware versions may differ.
 
-Build the full 16 MiB SPI flash image with:
+### Build from a fresh clone
 
 ```sh
+git clone --recurse-submodules git@github.com:McSanyo93/thingino-firmware.git
+cd thingino-firmware
+make update
 CAMERA=wyze_campan4_t32nq_sc835hai_atbm6162s GROUP=exp make
 ```
+
+This builds the full 16 MiB SPI flash image. `make update` initializes the
+Buildroot source, applies patches, and prepares the toolchain.
 
 The output is a flash image staged on the SD card for the adapted installer;
 it does not run Thingino from the SD card. The tested stock card was 64 GB,
