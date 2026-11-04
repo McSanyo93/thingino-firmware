@@ -20,7 +20,7 @@ Use an x86_64 or aarch64 Linux host with the packages listed by
 the repository update step:
 
 ```sh
-git clone --recurse-submodules https://github.com/themactep/thingino-firmware.git
+git clone --recurse-submodules https://github.com/McSanyo93/thingino-firmware.git
 cd thingino-firmware
 make update
 ```
@@ -34,6 +34,26 @@ CAMERA=wyze_campan4_t32nq_sc835hai_atbm6162s GROUP=exp make
 The full image is named
 `thingino-wyze_campan4_t32nq_sc835hai_atbm6162s.bin` and is 16 MiB. Use the
 path printed by the build; output directories vary by branch, kernel, and libc.
+
+## Stock dump and build inputs
+
+The diagnostic and installer FITs are built from a full 16 MiB stock flash
+dump. The dump is used as the source of the vendor FIT container that the
+external SD installer builder modifies. The scripts do not flash the dump,
+and the dump is not needed for an ordinary Thingino source build.
+
+The file used during bring-up was
+`firmware_T32NQ_20261027_0316.bin` (16,777,216 bytes, SHA-256
+`563cf447a06d1c876746012a5a29ba17df1280c6e8a6c0e5a57656cbef104862`). Keep
+the dump locally. `.gitignore` excludes that filename so it cannot be added
+accidentally; do not publish the proprietary stock image or generated FITs.
+The FITs are reproducible build outputs and are regenerated from the local
+dump when needed.
+
+The builder scripts clone `gtxaspec/wyze-campan4-sd-install` into temporary
+directories. They do not copy that external repository into this fork. Logs,
+temporary checkouts, and generated artifacts are kept under `/tmp` and the
+ignored `output/` directory.
 
 The working profile needs these ISP settings in its defconfig:
 
@@ -49,25 +69,20 @@ BR2_ISP_CLKV_400MHZ=y
 KERNEL_VERSION_4=y
 ```
 
-The camera profile and defconfig are in the main repo. Apply these two
-bring-up edits if your clone has not picked them up yet:
+The Pan v4 profile in this fork already contains the following bring-up
+settings. They were needed to get video and correct day/night colors. The
+`thingino.json` GPIO order is also the tested persistent IR-cut direction.
 
-1. In
+1. The final value in
    `configs/cameras-exp/wyze_campan4_t32nq_sc835hai_atbm6162s/thingino.json`,
-   change:
-
-   ```json
-   "ircut": "72 73"
-   ```
-
-   to:
+   is:
 
    ```json
    "ircut": "73 72"
    ```
 
-2. In `package/ingenic-sdk/ingenic-sdk.mk`, make the kernel-release query
-   suppress the nested make banner. The line should read:
+2. In `package/ingenic-sdk/ingenic-sdk.mk`, the kernel-release query
+   suppresses the nested make banner:
 
    ```make
    krel="$$( $(MAKE) -s --no-print-directory -C $(LINUX_DIR) kernelrelease 2>/dev/null )"; \
@@ -107,6 +122,20 @@ The stock firmware reported this flash layout:
 | mtd3 | 5,632 KiB | back |
 | mtd4 | 320 KiB | cfg |
 | mtd5 | 64 KiB | provisioning |
+
+### What the FIT files do
+
+FIT is the U-Boot Flattened Image Tree container. The stock SD boot path looks
+for a file named `factory_wcpanv4_uvc`; the external builder takes the vendor
+FIT from the stock dump and substitutes a small temporary ramdisk. Its FIT
+signature-bypass technique allows the stock bootloader to start that ramdisk
+from the SD card. The diagnostic FITs only run their report and reboot. They
+do not erase or write SPI flash.
+
+The installer FIT uses the same boot path but carries the installer
+`/linuxrc` instead. It is the only FIT in this workflow that writes flash.
+The stock dump is a build input for both types of FIT; it is not placed on the
+SD card as `autoupdate-full.bin`.
 
 ### Read-only diagnostics used to identify the layout
 
@@ -160,11 +189,71 @@ Copy one FIT at a time to the FAT32 card root and capture the startup report.
 The layout report shows `/proc/cmdline`, `/proc/mtd`, and flash device nodes;
 the mount report checks proc, sysfs, tmpfs, devtmpfs, and `/tmp/sd`.
 
-The tested SD card was 64 GB, FAT32, with one partition (`FAT32 XINT13`). Copy
-the built image to its root as exactly `autoupdate-full.bin`; the installer
-stopped with `ERROR: missing autoupdate-full.bin` when it could not find that
-path/name. The user's card also contained `factory_wcpanv4_uvc`; preserve that
-vendor file if following the same stock-card setup.
+The tested SD card was 64 GB, FAT32, with one partition (`FAT32 XINT13`). For
+the diagnostic step, copy one diagnostic FIT to the root using the exact name
+`factory_wcpanv4_uvc`. For installation, copy both the installer FIT as
+`factory_wcpanv4_uvc` and the Thingino full image as exactly
+`autoupdate-full.bin`. The installer stopped with
+`ERROR: missing autoupdate-full.bin` when that exact path/name was absent.
+The stock card originally contained `factory_wcpanv4_uvc`; the installer FIT
+replaces that file for the boot attempt.
+
+### Four build scripts
+
+Run the commands from the Thingino fork checkout. The stock dump can be stored
+outside the checkout; the example below uses a local file path:
+
+```sh
+STOCK_DUMP=/path/to/firmware_T32NQ_20261027_0316.bin
+
+scripts/wyze-panv4-build-diag-layout.sh "$STOCK_DUMP"
+scripts/wyze-panv4-build-diag-mounts.sh "$STOCK_DUMP"
+scripts/wyze-panv4-build-firmware.sh
+```
+
+The first two scripts each clone the external FIT builder, add the diagnostic
+report script, build a separate FIT, and save the output plus full build log
+under `output/panv4-diag-layout/` and `output/panv4-diag-mounts/`. Both FITs
+have the same filename, `factory_wcpanv4_uvc`; use one at a time. The firmware
+script clones this fork to a temporary work directory, runs `make update`,
+builds the U-Boot target, then builds the complete firmware image. Its
+`artifacts.txt` lists the firmware, U-Boot, and environment file paths. Full
+logs remain in that temporary work directory.
+
+Build the installer bundle from those paths:
+
+```sh
+scripts/wyze-panv4-build-sd-card.sh \
+  "$STOCK_DUMP" \
+  /path/to/thingino-wyze_campan4_t32nq_sc835hai_atbm6162s.bin \
+  /path/to/u-boot-with-tpl-lzma.bin \
+  /path/to/u-boot-env.bin
+```
+
+The final script clones the external FIT builder into `/tmp`, replaces its
+`rootfs/linuxrc` with the partition-aware installer, and produces an ignored
+`output/panv4-sd-card/` directory containing `factory_wcpanv4_uvc`,
+`autoupdate-full.bin`, `SHA256SUMS`, and a card README. It does not clone or
+commit the external project into this fork. None of the four build scripts
+flashes the camera; the installer FIT writes flash only when booted on the
+camera.
+
+The committed installer `linuxrc` is a reconstruction of the temporary
+installer used during the original successful installation. It checks the
+exact MTD layout, backs up each MTD partition, reads each partition a second
+time and verifies its hash, and saves a 16 MiB reconstructed stock backup and
+hashes to the SD card before any flash write. It then erases the stock U-Boot
+and boot partitions, writes the Thingino U-Boot across the 192 KiB `mtd0` and
+the first 128 KiB of `mtd1` (the 320 KiB U-Boot slot), and writes the
+environment at absolute flash offset `0x50000` (`0x20000` within `mtd1`). It
+reads back and verifies U-Boot and environment before rebooting. The new
+bootloader then applies
+`autoupdate-full.bin`; leave the SD card inserted until Thingino boots.
+
+The temporary installer used in the original bring-up was confirmed to boot
+Thingino. The installer payload reconstructed in the committed script has
+not yet been tested on the camera. Treat it as experimental and keep UART
+recovery access available.
 
 The working sequence was:
 
@@ -180,36 +269,10 @@ The working sequence was:
    respond on the network.
 
 The successful installer printed `umount: can't unmount /tmp/sd: Device or
-resource busy` after the bootloader verification. The camera was then rebooted
-without the card and came up running Thingino; in this run that unmount message
-was not a failed flash. Confirm the boot and network access before treating an
-installation as complete.
-
-The temporary installer tested during the original bring-up was built outside
-this checkout from `gtxaspec/wyze-campan4-sd-install`. The fourth build script
-now embeds a reconstructed partition-aware `rootfs/linuxrc` and stages the
-FIT plus firmware image. This reconstruction has not yet been run on the
-camera. To adapt the upstream `rootfs/linuxrc` for installation:
-
-1. Create mount points before mounting. If devtmpfs is already mounted at
-   `/dev`, keep using it instead of trying to mount it again or replacing its
-   device nodes.
-2. Use the observed MTD map above. Do not treat `/dev/mtd0` as a 16 MiB NOR
-   device: it is only 192 KiB. Back up each MTD partition separately, verify
-   each backup against a second read, and do not proceed to writes unless all
-   partitions verify.
-3. Write the 320 KiB Thingino U-Boot across the stock `uboot` and `boot`
-   partitions. The environment starts at absolute flash offset `0x50000`,
-   which is `0x20000` into `mtd1`. Erase only the required aligned flash area
-   and verify U-Boot and environment by reading them back.
-4. Keep the full Thingino image at the SD root as `autoupdate-full.bin` for
-   the subsequent firmware update. The tested installer rebooted after
-   verifying the bootloader; after that reboot the camera started Thingino.
-
-The successful installer printed `umount: can't unmount /tmp/sd: Device or
 resource busy` after verification because a log file was still open on the
 card. The camera nevertheless rebooted successfully without the SD card. Keep
-the verified stock backups from the card for recovery.
+the verified stock backups from the card for recovery. Confirm the boot and
+network access before treating an installation as complete.
 
 ## First boot notes
 

@@ -32,6 +32,8 @@ __pycache__/
 /host-shared
 /user
 /output
+# User-provided Wyze stock firmware dump; do not publish this proprietary image.
+/firmware_T32NQ_20261027_0316.bin
 /overrides
 /package/thingino-webui/files/var/www/onvif/*_files
 /package/thingino-webui/files/var/www/onvif/*_service

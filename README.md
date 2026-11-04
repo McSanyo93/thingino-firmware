@@ -11,7 +11,7 @@ stock firmware versions may differ.
 ### Build from a fresh clone
 
 ```sh
-git clone --recurse-submodules git@github.com:McSanyo93/thingino-firmware.git
+git clone --recurse-submodules https://github.com/McSanyo93/thingino-firmware.git
 cd thingino-firmware
 make update
 CAMERA=wyze_campan4_t32nq_sc835hai_atbm6162s GROUP=exp make
@@ -28,8 +28,13 @@ bootloader.
 
 ### Four-script build flow
 
-With a stock full-flash dump available as a file, run the two read-only
-diagnostic builders:
+The dump is a build input, not an image to copy or flash. It is intentionally
+excluded from Git. The bring-up dump was
+`firmware_T32NQ_20261027_0316.bin` (16 MiB, SHA-256
+`563cf447a06d1c876746012a5a29ba17df1280c6e8a6c0e5a57656cbef104862`).
+Keep your own copy locally. Generated FITs live under ignored `output/`.
+
+To build the two read-only diagnostics:
 
 ```sh
 scripts/wyze-panv4-build-diag-layout.sh /path/to/stock-full-dump.bin
@@ -78,12 +83,13 @@ The two diagnostic builders clone that project, copy this repo's report
 script into its `rootfs/`, and call it from `rootfs/linuxrc` after mounting
 the pseudo-filesystems and SD card. For a diagnostic-only image, `linuxrc`
 prints the report, waits, and reboots without running erase or write commands.
-The temporary boot uses the stock U-Boot FIT signature bypass implemented by
-the upstream builder. The build scripts never flash the camera.
+The temporary boot uses the stock U-Boot FIT signature-bypass technique
+implemented by the upstream builder. The installer FIT carries the
+partition-aware installer instead. The build scripts never flash the camera.
 
 For the installer, the fourth script replaces the diagnostic `linuxrc` with
 partition-aware writes: it mounts idempotently, verifies backups, targets the
-192 KiB `mtd0` plus the first 128 KiB of `mtd1` for the 320 KiB U-Boot image,
+192 KiB `mtd0` plus the first 128 KiB of `mtd1` for the 320 KiB U-Boot slot,
 and writes the environment at absolute flash offset `0x50000` (`0x20000`
 within `mtd1`). Never treat `/dev/mtd0` as a raw 16 MiB flash device. The
 partition map and diagnostics are in
