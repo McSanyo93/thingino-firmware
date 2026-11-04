@@ -24,49 +24,69 @@ The output is a flash image staged on the SD card for the adapted installer;
 it does not run Thingino from the SD card. The tested stock card was 64 GB,
 FAT32, and used the exact filename `autoupdate-full.bin`. The installer first
 backed up and verified the stock flash, then installed the Thingino
-bootloader. **The adapted SD installer is not included in this repo**, so the
-firmware image alone is not sufficient to reproduce installation over stock.
+bootloader.
+
+### Four-script build flow
+
+With a stock full-flash dump available as a file, run the two read-only
+diagnostic builders:
+
+```sh
+scripts/wyze-panv4-build-diag-layout.sh /path/to/stock-full-dump.bin
+scripts/wyze-panv4-build-diag-mounts.sh /path/to/stock-full-dump.bin
+```
+
+Each creates a separate `factory_wcpanv4_uvc` diagnostic FIT under `output/`.
+Copy one at a time to a FAT32 SD card root to boot its report. The layout
+variant prints the command line, MTD table, and flash device nodes. The mounts
+variant prints filesystem mount status and `/proc/mounts`.
+
+Build the Thingino U-Boot and full firmware image:
+
+```sh
+scripts/wyze-panv4-build-firmware.sh
+```
+
+The script clones this fork, runs `make br-uboot`, then `make fast`. It prints
+the full image, U-Boot, and environment paths and saves them in
+`artifacts.txt` in the work directory.
+
+Build and stage the stock SD installer bundle with those paths:
+
+```sh
+scripts/wyze-panv4-build-sd-card.sh \
+  /path/to/stock-full-dump.bin \
+  /path/to/thingino-wyze_campan4_t32nq_sc835hai_atbm6162s.bin \
+  /path/to/u-boot-image.bin \
+  /path/to/u-boot-env.bin
+```
+
+It clones the upstream FIT builder, injects the partition-aware installer,
+and creates an output directory containing `factory_wcpanv4_uvc` and
+`autoupdate-full.bin`. Copy both files to the FAT32 card root. The installer
+backs up and verifies all stock MTD partitions before writing the bootloader;
+leave the card inserted through the firmware auto-update reboot and remove it
+after Thingino boots. This reconstructed installer payload has not yet been
+run on the camera; the earlier temporary installer was the version confirmed
+to work.
 
 ### Adapt the stock SD installer
 
-The diagnostic boot and installer were made from
+The diagnostic boot and earlier installer were made from
 [`gtxaspec/wyze-campan4-sd-install`](https://github.com/gtxaspec/wyze-campan4-sd-install).
-Clone that project separately, copy this repo's read-only diagnostic script
-into its `rootfs/`, and call it from `rootfs/linuxrc` after the pseudo-filesystems
-and SD card are mounted. For a diagnostic-only image, call the script and
-pause before any install logic:
-
-```sh
-/wyze-panv4-diagnostics.sh
-sleep 30
-reboot -f
-```
-
+The two diagnostic builders clone that project, copy this repo's report
+script into its `rootfs/`, and call it from `rootfs/linuxrc` after mounting
+the pseudo-filesystems and SD card. For a diagnostic-only image, `linuxrc`
+prints the report, waits, and reboots without running erase or write commands.
 The temporary boot uses the stock U-Boot FIT signature bypass implemented by
-that external builder. To build the diagnostic FIT with the stock full dump
-and the U-Boot plus environment files from the Thingino build:
+the upstream builder. The build scripts never flash the camera.
 
-```sh
-git clone https://github.com/gtxaspec/wyze-campan4-sd-install.git
-cd wyze-campan4-sd-install
-cp /path/to/thingino-firmware/scripts/wyze-panv4-diagnostics.sh rootfs/
-STOCK_DUMP=/path/to/stock-full-dump.bin
-UBOOT_IMAGE=/path/to/output/images/u-boot-with-spl-lzma.bin
-UBOOT_ENV=/path/to/output/images/u-boot-env.bin
-./build.sh "$STOCK_DUMP" "$UBOOT_IMAGE" "$UBOOT_ENV"
-```
-
-Replace the example paths with the stock dump and image paths from your build;
-the U-Boot image filename can vary by configuration.
-
-That creates `factory_wcpanv4_uvc`, which boots the temporary ramdisk. For an
-installer, replace the diagnostic-only `linuxrc` with a partition-aware
-installer: create mount points first, tolerate devtmpfs already mounted, back
-up and verify every MTD partition before writing, and target the 192 KiB
-`mtd0` plus the first 128 KiB of `mtd1` for the 320 KiB U-Boot image. The
-environment is at flash offset `0x50000` (offset `0x20000` within `mtd1`).
-Never treat `/dev/mtd0` as a raw 16 MiB flash device. The exact partition map,
-diagnostic steps, and observed installer behavior are in
+For the installer, the fourth script replaces the diagnostic `linuxrc` with
+partition-aware writes: it mounts idempotently, verifies backups, targets the
+192 KiB `mtd0` plus the first 128 KiB of `mtd1` for the 320 KiB U-Boot image,
+and writes the environment at absolute flash offset `0x50000` (`0x20000`
+within `mtd1`). Never treat `/dev/mtd0` as a raw 16 MiB flash device. The
+partition map and diagnostics are in
 [`docs/cameras/wyze-cam-pan-v4.md`](docs/cameras/wyze-cam-pan-v4.md).
 
 The camera's read-only startup diagnostics are documented in
