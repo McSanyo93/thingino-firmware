@@ -1,6 +1,35 @@
 Thingino
 --------
 
+## Wyze Cam Pan v4 bring-up (experimental)
+
+This fork includes a camera-specific profile for the Wyze Cam Pan v4 with an
+Ingenic T32NQ, SC835HAI sensor, and ATBM6162S Wi-Fi. The profile and the
+stock-to-Thingino bring-up were tested on one camera. Hardware revisions and
+stock firmware versions may differ.
+
+Build the full 16 MiB SPI flash image with:
+
+```sh
+CAMERA=wyze_campan4_t32nq_sc835hai_atbm6162s GROUP=exp make
+```
+
+The output is a flash image staged on the SD card for the adapted installer;
+it does not run Thingino from the SD card. The tested stock card was 64 GB,
+FAT32, and used the exact filename `autoupdate-full.bin`. The installer first
+backed up and verified the stock flash, then installed the Thingino
+bootloader. **The adapted SD installer is not included in this repo**, so the
+firmware image alone is not sufficient to reproduce installation over stock.
+
+The camera's read-only startup diagnostics are documented in
+[`docs/cameras/wyze-cam-pan-v4.md`](docs/cameras/wyze-cam-pan-v4.md). The
+script [`scripts/wyze-panv4-diagnostics.sh`](scripts/wyze-panv4-diagnostics.sh)
+prints the kernel command line, MTD partitions, MTD device nodes, and mounts.
+The tested ISP clocks and IR-cut GPIO order are recorded in the Pan v4
+defconfig and `thingino.json`.
+
+---
+
 Thingino (_/θinˈdʒiːno/_, _thin-jee-no_) is an open-source firmware for Ingenic SoC IP cameras.
 
 ![Thingino Web UI][10]
